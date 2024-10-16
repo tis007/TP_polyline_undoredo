@@ -2,6 +2,81 @@ import Stack from './stack';
 import Konva from "konva";
 import { createMachine, interpret } from "xstate";
 
+// ===========================================================================
+
+class UndoManager {
+    constructor(buttonUndo, buttonRedo) {
+        this.buttonUndo = buttonUndo;
+        this.buttonRedo = buttonRedo;
+        this.stackUndo = new Stack();
+        this.stackRedo = new Stack();
+        buttonUndo.disabled = true;
+        buttonRedo.disabled = true;
+    }
+
+    undo() {
+        if (stackUndo.isEmpty()) {
+            return;
+        }
+        let command = stackUndo.pop();
+        stackRedo.push(command);
+        command.undo();
+        this.disableButtons();
+    }
+
+    redo() {
+        if (stackRedo.isEmpty()) {
+            return;
+        }
+        let command = stackRedo.pop();
+        stackUndo.push(command);
+        command.execute();
+        this.disableButtons(); 
+    }
+
+    execute(command) {
+        command.execute();
+        stackUndo.push(command);
+        this.disableButtons();
+    }
+
+    disableButtons() {
+        this.buttonUndo.disabled = !this.canUndo();
+        this.buttonRedo.disabled = !this.canRedo();
+    }
+
+    canUndo() {
+        return !stackUndo.isEmpty();
+    }
+
+    canRedo() {
+        return !stackRedo.isEmpty();
+    }
+}
+
+class Command {
+    execute() { };
+    undo() { };
+}
+
+class AddPolylineCommand extends Command {
+    constructor(polyline, dessin) {
+        super();
+        this.myPolyline = polyline;
+        this.myDessin = dessin;
+    }
+
+    execute() {
+        this.myDessin.add(this.myPolyline);
+    }
+
+    undo() {
+        this.myPolyline.remove();
+    }
+}
+
+//===========================================================================
+
 const stage = new Konva.Stage({
     container: "container",
     width: 400,
@@ -15,12 +90,16 @@ const temporaire = new Konva.Layer();
 stage.add(dessin);
 stage.add(temporaire);
 
+const undoButton = document.getElementById("undo");
+const redoButton = document.getElementById("redo");
+let undoManager = new UndoManager(undoButton, redoButton);
+
 const MAX_POINTS = 10;
 let polyline // La polyline en cours de construction;
 
 const polylineMachine = createMachine(
     {
-        /** @xstate-layout N4IgpgJg5mDOIC5QAcD2AbAngGQJYDswA6XCdMAYgFkB5AVQGUBRAYWwEkWBpAbQAYAuohSpYuAC65U+YSAAeiAIwAWAGxEArAGYAHDo0AmA3x2qNqxRoA0ITEoCciosoDsRg-Zf6DWg4pcAvgE2aFh4hETSYAAKqATi1PTMbJy8grJoYpLSsgoIFvZEOpbKij5l9jou9jZ2CIqOzm4+Ospa1YZ8qkEhGDgExFGx8YmMTLQAakz8QkggmRJSMnN5rlpE9ho69j5aWpVtLta2SnxOBjpaDRcWygZqOj3zfeGDhMP4CUywAMYAhsgwDMMqJFjkVkpVAZnNt2mV9tVfFpaohfHwigYNG0NOZVEcdAYnqF+hEALZ-fCYD7iWCjZIcbjAuYLbLLUB5RR8FzrcxaZR8YwXFyuFEIAxeIgubmqPH2eyuExtIkvAZEcmU6m02hjFKMxSzERZJa5U6qHSadp85RYy6KKqirR45xaPhdUqKO1mZTKsKq9VUuKfLVJcY0KZMw1gtnyJRlDREGVQtyGLHWlyiznnW07Uwqe6BYLPX1kikB+K077-QER55G8HsxA6AWaLmeHFVLFQh2FKoGKHy-ZaDRlAu9YvEf2aihMT5gABONZZxohCB2PalRiHpj5JlFAFpOc4PUd2splJcXDLHoXia81aWpwAhP4-ADWsGQL6B6WZoNZJoQFxFHUNp2kuGVrTxZQHWMDEsSHXF8UJG8VRLDVAxpChnzfD8vx4fUQTraNVlUZQikqTo7XsLlqhg9ECXgnEZXxRQtCCQt8FQCA4BBcdCKjAC9zUI9pVUAUvDRZETgQPdPHIvhHC8M12guZCxxJYhSHIfj-xXJwtj7PZPD8WUzR0UU-DIzFTE8UoqmAvkfQ0yJ3gwnTlwbBBTyIfZzz4DRqIJPgrgslQiGs1RbLtIDVEclDx3vdDy3c+sY1XS5JQ0BT2li6zzOkyyE0RD1gv2Kp5XYgIgA */
+        /** @xstate-layout N4IgpgJg5mDOIC5QAcD2AbAngGQJYDswA6XCdMAYgFkB5AVQGUBRAYWwEkWBpAbQAYAuohSpYuAC65U+YSAAeiAIwAWAGxEArAGYAnFo17digEwB2HcoA0ITEp2KiADi1bV21Xy3LFOjRoC+-tZoWHiERNJgAAqoBOLU9MxsnLyCsmhiktKyCgiqWsaabsrGjo6lxtqm1rYIPg7Oru6e3r4BQSAhOATEkTFxCYxMtABqTPxCSJ2iElIyU7nKplpEvo46xi66jspapho1SnwOpVo+paoqxmqOgcEY3eF9sfjxTLAAxgCGyGAT6TMsvNQLlFKpCsp1nsTLpzAUtIcEAU+E5Krs-KpVPtyndpqEekQALZffCYfqvWCDJIcbj-KYZWbZBZHZZFLx8YwcxymJaIsyOIimZaY8wWUx8HZaXFdMLEYmk8niSm0IbJWmKSYiTJzHJHRSmIilHnLY7GHyORFLAV6U2ODR8DT5MzSh6yokkskvJVU4Y0MZ0rWM4HyJQmDRETHg0yVNHKDTVGx6w3Oc6OS4lJYu-HheWeuKU97fX4B6bapkgxCODmaPjmfYabkaNTGRG6JzR8EWXT6EymLOPOUexUF15gABOJYZQN1CA2Onb0c2DfyygliIAtIoUd59VVlJC9pjbh0ZQTc8OKAAhL4fADWsGQN7+aXpgJ1zIQywNimc9fqzmcVt9CIAomz4VQrS3HRj3ubNBwVL1KWvO8HyfHgNQBMtg0WMwiEUBsNnjVpFB8VRW1KEC0VcLQHTTRQpVxfBUAgOAATgzCgxndc1CIbxhQ8flkQRRMEHXHQDVMEjTA8TELB0fIGNggcSDIMAOOnD8HAbYwFPEs0sXkso+RUQ1l3E7xuTBLx+zdZ44nU98KyRHkQIsKsDAlTkzmM5RTLTcyf0klcbLPIdEIc8sQzqPhV1MrcFJXHlER-AUDNKPxnHjUxuUCQIgA */
         id: "polyLine",
         initial: "idle",
         states: {
@@ -119,7 +198,9 @@ const polylineMachine = createMachine(
                 polyline.points(newPoints);
                 polyline.stroke("black"); // On change la couleur
                 // On sauvegarde la polyline dans la couche de dessin
-                dessin.add(polyline); // On l'ajoute à la couche de dessin
+                dessin.add(polyline);
+                undoManager.execute(new AddPolylineCommand(polyline, dessin));
+                dessin.batchDraw();
             },
             addPoint: (context, event) => {
                 const pos = stage.getPointerPosition();
@@ -172,8 +253,18 @@ window.addEventListener("keydown", (event) => {
     polylineService.send(event.key);
 });
 
+
+var stackUndo = new Stack();
+var stackRedo = new Stack();
+
 // bouton Undo
-const undoButton = document.getElementById("undo");
 undoButton.addEventListener("click", () => {
-    
+    undoManager.undo();
+
 });
+
+redoButton.addEventListener("click", () => {
+    undoManager.redo();
+});
+
+
